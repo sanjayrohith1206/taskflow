@@ -1,0 +1,40 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Dependency directories
+node_modules/
+jspm_packages/
+vendor/
+
+# Build outputs
+dist/
+build/
+bin/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go specific
+backend/server
+backend/migrate_local
+go.work
+go.work.sum
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
