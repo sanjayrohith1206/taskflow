@@ -315,7 +315,7 @@ const ProjectDetail: React.FC = () => {
                         className={`list-row ${snapshot.isDragging ? 'dragging' : ''}`}
                         onClick={() => openEditModal(task)}
                         style={{
-                          ...provided.style,
+                          ...provided.draggableProps.style,
                           background: snapshot.isDragging ? 'var(--bg-secondary)' : 'var(--bg-primary)',
                           boxShadow: snapshot.isDragging ? 'var(--shadow-lg)' : 'none',
                           border: snapshot.isDragging ? '1px solid var(--brand-primary)' : '1px solid transparent',

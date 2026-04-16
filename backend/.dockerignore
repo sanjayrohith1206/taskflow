@@ -1,0 +1,8 @@
+.git
+.DS_Store
+vendor/
+backend.log
+.env
+.env.example
+*.exe
+main
