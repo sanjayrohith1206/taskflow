@@ -13,12 +13,22 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 	"github.com/taskflow/backend/internal/handler"
 	authMiddleware "github.com/taskflow/backend/internal/middleware"
 	"github.com/taskflow/backend/internal/repository"
 	"github.com/taskflow/backend/internal/ws"
 	"github.com/gofiber/websocket/v2"
 )
+
+func runMigrations(db *sql.DB) error {
+	goose.SetDialect("postgres")
+
+	if err := goose.Up(db, "./migrations"); err != nil {
+		return err
+	}
+	return nil
+}
 
 func main() {
 	// Initialize logger
@@ -56,6 +66,12 @@ func main() {
 
 	if err := db.Ping(); err != nil {
 		slog.Error("failed to ping database", "error", err)
+		os.Exit(1)
+	}
+
+	// Run migrations
+	if err := runMigrations(db); err != nil {
+		slog.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}
 

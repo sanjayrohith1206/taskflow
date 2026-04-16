@@ -66,13 +66,32 @@ func (h *ProjectHandler) GetByID(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found"})
 	}
 
-	tasks, err := h.taskRepo.ListByProject(c.UserContext(), id, "", "")
+	// Pagination
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 10)
+	if page < 1 { page = 1 }
+	if limit < 1 { limit = 10 }
+	offset := (page - 1) * limit
+
+	status := c.Query("status")
+	tasks, err := h.taskRepo.ListByProject(c.UserContext(), id, status, "", limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
-	p.Tasks = tasks
+	
+	total, err := h.taskRepo.CountByProject(c.UserContext(), id, status)
+	if err != nil {
+		// Log error but don't fail the whole request
+		total = len(tasks)
+	}
 
-	return c.JSON(p)
+	return c.JSON(fiber.Map{
+		"project":      p,
+		"tasks":        tasks,
+		"total_tasks":  total,
+		"current_page": page,
+		"page_size":    limit,
+	})
 }
 
 func (h *ProjectHandler) Update(c *fiber.Ctx) error {

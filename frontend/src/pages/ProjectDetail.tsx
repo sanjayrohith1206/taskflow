@@ -5,7 +5,8 @@ import {
   Plus, Search, Filter, Calendar, 
   CheckCircle2, Circle, Clock, 
   AlertCircle, MoreVertical, Trash2, Edit2,
-  GripVertical
+  GripVertical, List, Layout as LayoutIcon,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -45,6 +46,12 @@ const ProjectDetail: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<string>('position');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(1);
+  const [totalTasks, setTotalTasks] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
@@ -57,7 +64,11 @@ const ProjectDetail: React.FC = () => {
   useEffect(() => {
     fetchProject();
     fetchUsers();
-  }, [id, filterStatus]);
+  }, [id, filterStatus, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, searchQuery]);
 
   const fetchUsers = async () => {
     try {
@@ -70,8 +81,9 @@ const ProjectDetail: React.FC = () => {
 
   const fetchProject = async () => {
     try {
-      const data = await api.get(`/projects/${id}?status=${filterStatus}`);
-      setProject(data);
+      const data = await api.get(`/projects/${id}?status=${filterStatus}&page=${page}&limit=${pageSize}`);
+      setProject({ ...data.project, tasks: data.tasks });
+      setTotalTasks(data.total_tasks);
     } catch (err) {
       console.error('Failed to fetch project', err);
       navigate('/projects');
@@ -90,79 +102,55 @@ const ProjectDetail: React.FC = () => {
     const { destination, source, draggableId } = result;
 
     if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+    if (destination.index === source.index) return;
 
-    const task = project?.tasks.find(t => t.id === draggableId);
-    if (!task) return;
-
-    const newStatus = destination.droppableId as Task['status'];
     const originalTasks = [...(project?.tasks || [])];
+    const reorderedTasks = Array.from(filteredAndSortedTasks);
+    const [movedTask] = reorderedTasks.splice(source.index, 1);
+    reorderedTasks.splice(destination.index, 0, movedTask);
 
     // Optimistic Update
     setProject(prev => {
       if (!prev) return null;
-      const updatedTasks = prev.tasks.map(t => 
-        t.id === draggableId ? { ...t, status: newStatus, position: destination.index } : t
-      );
+      // We update the positions in the local state for all involved tasks if needed, 
+      // but for simplicity we'll just update the moved task's position and rely on the next fetch
+      // or a more sophisticated local sort.
+      const updatedTasks = prev.tasks.map(t => {
+        if (t.id === draggableId) {
+          return { ...t, position: destination.index };
+        }
+        return t;
+      });
       return { ...prev, tasks: updatedTasks };
     });
 
     try {
       await api.patch(`/tasks/${draggableId}`, { 
-        status: newStatus,
         position: destination.index
       });
+      // Optionally re-fetch to ensure backend state consistency
+      fetchProject();
     } catch (err) {
       setProject(prev => prev ? { ...prev, tasks: originalTasks } : null);
     }
   };
 
-  const tasksByStatus = {
-    todo: project?.tasks?.filter(t => t.status === 'todo').sort((a, b) => a.position - b.position) || [],
-    in_progress: project?.tasks?.filter(t => t.status === 'in_progress').sort((a, b) => a.position - b.position) || [],
-    done: project?.tasks?.filter(t => t.status === 'done').sort((a, b) => a.position - b.position) || []
-  };
+  const filteredAndSortedTasks = (project?.tasks || [])
+    .filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      const fieldA = (a as any)[sortField];
+      const fieldB = (b as any)[sortField];
+      if (fieldA < fieldB) return sortDirection === 'asc' ? -1 : 1;
+      if (fieldA > fieldB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
 
-  const handleTaskAction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editingTask) {
-        await api.patch(`/tasks/${editingTask.id}`, taskForm);
-      } else {
-        await api.post(`/projects/${id}/tasks`, taskForm);
-      }
-      setShowTaskModal(false);
-      setEditingTask(null);
-      setTaskForm({ title: '', description: '', status: 'todo', priority: 'medium', assignee_id: '', due_date: '' });
-      fetchProject();
-    } catch (err) {
-      console.error('Failed to save task', err);
-    }
-  };
-
-  const handleStatusChange = async (task: Task, newStatus: string) => {
-    // Optimistic UI
-    const originalTasks = [...(project?.tasks || [])];
-    setProject(prev => prev ? {
-      ...prev,
-      tasks: prev.tasks.map(t => t.id === task.id ? { ...t, status: newStatus as any } : t)
-    } : null);
-
-    try {
-      await api.patch(`/tasks/${task.id}`, { status: newStatus });
-    } catch (err) {
-      // Revert on error
-      setProject(prev => prev ? { ...prev, tasks: originalTasks } : null);
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-    try {
-      await api.delete(`/tasks/${taskId}`);
-      fetchProject();
-    } catch (err) {
-      console.error('Failed to delete task', err);
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
     }
   };
 
@@ -179,16 +167,63 @@ const ProjectDetail: React.FC = () => {
     setShowTaskModal(true);
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    if (window.confirm('Are you sure you want to delete this task?')) {
+      try {
+        await api.delete(`/tasks/${taskId}`);
+        fetchProject();
+      } catch (err) {
+        console.error('Failed to delete task', err);
+      }
+    }
+  };
+
+  const handleTaskAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      ...taskForm,
+      assignee_id: taskForm.assignee_id || null,
+      due_date: taskForm.due_date || null
+    };
+
+    try {
+      if (editingTask) {
+        await api.patch(`/tasks/${editingTask.id}`, payload);
+      } else {
+        await api.post(`/projects/${id}/tasks`, payload);
+      }
+      setShowTaskModal(false);
+      setTaskForm({
+        title: '',
+        description: '',
+        status: 'todo',
+        priority: 'medium',
+        assignee_id: '',
+        due_date: ''
+      });
+      fetchProject();
+    } catch (err) {
+      console.error('Failed to perform task action', err);
+    }
+  };
+
   if (loading) return <div className="flex-center" style={{ height: '60vh' }}><div className="loader" /></div>;
   if (!project) return null;
+
+  const renderSortIcon = (field: string) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
+  };
 
   return (
     <div className="container" style={{ paddingBottom: '5rem' }}>
       <div style={{ marginBottom: '3rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
           <div>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>{project.name}</h1>
-            <p style={{ maxWidth: '700px' }}>{project.description}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+              <h1 style={{ fontSize: '2.5rem' }}>{project.name}</h1>
+            </div>
+            <p style={{ maxWidth: '700px', color: 'var(--text-secondary)' }}>{project.description}</p>
           </div>
           <button className="btn btn-primary" onClick={() => { setEditingTask(null); setShowTaskModal(true); }}>
             <Plus size={20} />
@@ -196,163 +231,214 @@ const ProjectDetail: React.FC = () => {
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-          <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input 
               type="text" 
-              placeholder="Search tasks..." 
+              placeholder="Search tasks by title..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: '100%',
-                padding: '0.625rem 0.625rem 0.625rem 2.5rem',
+                padding: '0.75rem 0.75rem 0.75rem 2.5rem',
                 background: 'var(--bg-secondary)',
-                border: '1px solid var(--bg-tertiary)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-md)',
                 color: 'var(--text-primary)',
-                outline: 'none'
+                outline: 'none',
+                transition: 'all 0.2s ease',
               }}
+              onFocus={(e) => e.target.style.borderColor = 'var(--brand-primary)'}
+              onBlur={(e) => e.target.style.borderColor = 'var(--border-subtle)'}
             />
           </div>
-          <select 
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            style={{
-              padding: '0.625rem 1rem',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--text-primary)',
-              outline: 'none'
-            }}
-          >
-            <option value="">All Statuses</option>
-            <option value="todo">To Do</option>
-            <option value="in_progress">In Progress</option>
-            <option value="done">Done</option>
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
+            <Filter size={16} style={{ color: 'var(--text-muted)' }} />
+            <select 
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              style={{
+                padding: '0.625rem 1rem',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--text-primary)',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">All Statuses</option>
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
         </div>
       </div>
-
       <DragDropContext onDragEnd={onDragEnd}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', alignItems: 'flex-start' }}>
-          {(['todo', 'in_progress', 'done'] as const).map((status) => (
-            <div key={status} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                <h3 style={{ fontSize: '1.1rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
-                  {status.replace('_', ' ')}
-                </h3>
-                <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: '10px', background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-                  {tasksByStatus[status].length}
-                </span>
+        <Droppable droppableId="task-list">
+          {(provided) => (
+            <div 
+              className="list-container"
+              {...provided.droppableProps}
+              ref={provided.innerRef}
+            >
+              <div className="list-header">
+                <div /> {/* Drag Handle Spacer */}
+                <div style={{ paddingLeft: '0px' }}>Task Title</div>
+                <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '11px' }} onClick={() => handleSort('status')}>
+                  Status {renderSortIcon('status')}
+                </div>
+                <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '18px' }} onClick={() => handleSort('priority')}>
+                  Priority {renderSortIcon('priority')}
+                </div>
+                <div style={{ paddingLeft: '32px' }}>Assignee</div>
+                <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }} onClick={() => handleSort('due_date')}>
+                  Due Date {renderSortIcon('due_date')}
+                </div>
+                <div style={{ textAlign: 'right' }}>Actions</div>
               </div>
 
-              <Droppable droppableId={status}>
-                {(provided, snapshot) => (
-                  <div
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    style={{
-                      minHeight: '500px',
-                      background: snapshot.isDraggingOver ? 'var(--bg-secondary)' : 'transparent',
-                      borderRadius: 'var(--radius-lg)',
-                      transition: 'background-color 0.2s ease',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '1rem'
-                    }}
-                  >
-                    {tasksByStatus[status].map((task, index) => (
-                      <Draggable key={task.id} draggableId={task.id} index={index}>
-                        {(provided, snapshot) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            className="glass-card"
-                            style={{ 
-                              ...provided.style,
-                              display: 'flex', 
-                              flexDirection: 'column',
-                              gap: '1rem',
-                              padding: '1.25rem',
-                              opacity: snapshot.isDragging ? 0.8 : 1,
-                              border: snapshot.isDragging ? '1px solid var(--brand-primary)' : '1px solid var(--bg-tertiary)'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div {...provided.dragHandleProps} style={{ color: 'var(--text-muted)', cursor: 'grab' }}>
-                                <GripVertical size={16} />
+              {filteredAndSortedTasks.length === 0 ? (
+                <div className="flex-center" style={{ padding: '4rem', flexDirection: 'column', gap: '1rem', color: 'var(--text-muted)' }}>
+                  <Search size={40} opacity={0.2} />
+                  <p>No tasks found matching your criteria</p>
+                </div>
+              ) : (
+                filteredAndSortedTasks.map((task, index) => (
+                  <Draggable key={task.id} draggableId={task.id} index={index}>
+                    {(provided, snapshot) => (
+                      <div 
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        className={`list-row ${snapshot.isDragging ? 'dragging' : ''}`}
+                        onClick={() => openEditModal(task)}
+                        style={{
+                          ...provided.style,
+                          background: snapshot.isDragging ? 'var(--bg-secondary)' : 'var(--bg-primary)',
+                          boxShadow: snapshot.isDragging ? 'var(--shadow-lg)' : 'none',
+                          border: snapshot.isDragging ? '1px solid var(--brand-primary)' : '1px solid transparent',
+                          borderRadius: snapshot.isDragging ? 'var(--radius-md)' : '0'
+                        }}
+                      >
+                        <div {...provided.dragHandleProps} style={{ padding: '0 10px', color: 'var(--text-muted)', cursor: 'grab' }}>
+                          <GripVertical size={18} />
+                        </div>
+                        <div style={{ fontWeight: 500 }}>{task.title}</div>
+                        <div>
+                          <span className={`badge ${task.status === 'in_progress' ? 'badge-primary' : ''}`}>
+                            {task.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.4rem', 
+                            fontSize: '0.8rem',
+                            color: `var(--priority-${task.priority})`,
+                            fontWeight: 600
+                          }}>
+                            <Circle size={8} fill="currentColor" />
+                            {task.priority.toUpperCase()}
+                          </span>
+                        </div>
+                        <div>
+                          {task.assignee_name ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div className="flex-center" style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--brand-glow)', color: 'var(--brand-primary)', fontSize: '0.7rem', fontWeight: 600 }}>
+                                {task.assignee_name.charAt(0).toUpperCase()}
                               </div>
-                              <span style={{ 
-                                fontSize: '0.65rem', 
-                                padding: '2px 6px', 
-                                borderRadius: '4px',
-                                background: `rgba(var(--priority-${task.priority}), 0.1)`,
-                                color: `var(--priority-${task.priority})`,
-                                border: `1px solid var(--priority-${task.priority})`,
-                                textTransform: 'uppercase',
-                                fontWeight: 700
-                              }}>
-                                {task.priority}
-                              </span>
+                              <span style={{ fontSize: '0.9rem' }}>{task.assignee_name}</span>
                             </div>
-
-                            <div style={{ flex: 1 }}>
-                              <h4 style={{ 
-                                fontSize: '1rem', 
-                                fontWeight: '600',
-                                marginBottom: '0.5rem',
-                                color: 'var(--text-primary)'
-                              }}>
-                                {task.title}
-                              </h4>
-                              {task.description && (
-                                <p style={{ 
-                                  fontSize: '0.85rem', 
-                                  color: 'var(--text-secondary)',
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  overflow: 'hidden'
-                                }}>
-                                  {task.description}
-                                </p>
-                              )}
-                            </div>
-
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                {task.assignee_name ? (
-                                  <div className="flex-center" style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--brand-primary)', color: 'white', fontSize: '0.6rem' }} title={task.assignee_name}>
-                                    {task.assignee_name.charAt(0).toUpperCase()}
-                                  </div>
-                                ) : (
-                                  <div className="flex-center" style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-                                    <Clock size={12} />
-                                  </div>
-                                )}
-                              </div>
-
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <button className="btn btn-ghost" style={{ padding: '0.25rem' }} onClick={() => openEditModal(task)}>
-                                  <Edit2 size={14} />
-                                </button>
-                                <button className="btn btn-ghost" style={{ padding: '0.25rem', color: 'var(--danger)' }} onClick={() => handleDeleteTask(task.id)}>
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </div>
-                )}
-              </Droppable>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Unassigned</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                          {task.due_date ? format(new Date(task.due_date), 'MMM d, yyyy') : '-'}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.25rem' }} onClick={(e) => e.stopPropagation()}>
+                          <button className="btn btn-ghost" style={{ padding: '0.4rem' }} onClick={() => openEditModal(task)}>
+                            <Edit2 size={16} />
+                          </button>
+                          <button className="btn btn-ghost" style={{ padding: '0.4rem', color: 'var(--danger)' }} onClick={() => handleDeleteTask(task.id)}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </Draggable>
+                ))
+              )}
+              {provided.placeholder}
             </div>
-          ))}
-        </div>
+          )}
+        </Droppable>
       </DragDropContext>
+
+      {/* Pagination UI */}
+      {totalTasks > 0 && (
+        <div className="pagination-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              Showing <strong style={{ color: 'var(--text-primary)' }}>{(page - 1) * pageSize + 1}</strong> 
+              &nbsp;to <strong style={{ color: 'var(--text-primary)' }}>{Math.min(page * pageSize, totalTasks)}</strong> 
+              &nbsp;of <strong style={{ color: 'var(--text-primary)' }}>{totalTasks}</strong> tasks
+            </div>
+            <div style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Show:</span>
+              <select 
+                className="pagination-select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="pagination-controls">
+            <button 
+              className="pagination-btn" 
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft size={18} />
+            </button>
+
+            {/* Simple page numbers */}
+            {Array.from({ length: Math.ceil(totalTasks / pageSize) }).map((_, i) => {
+              const pageNum = i + 1;
+              const isCurrent = page === pageNum;
+              return (
+                <button
+                  key={pageNum}
+                  className={`pagination-btn ${isCurrent ? 'active' : ''}`}
+                  onClick={() => setPage(pageNum)}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+
+            <button 
+              className="pagination-btn" 
+              onClick={() => setPage(p => p + 1)}
+              disabled={page * pageSize >= totalTasks}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Task Modal */}
       {showTaskModal && (

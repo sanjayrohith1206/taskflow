@@ -29,7 +29,7 @@ func (r *TaskRepository) Create(ctx context.Context, task *model.Task) error {
 	).Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 }
 
-func (r *TaskRepository) ListByProject(ctx context.Context, projectID uuid.UUID, status string, assigneeID string) ([]model.Task, error) {
+func (r *TaskRepository) ListByProject(ctx context.Context, projectID uuid.UUID, status string, assigneeID string, limit, offset int) ([]model.Task, error) {
 	query := `
 		SELECT t.id, t.title, t.description, t.status, t.priority, t.project_id, t.assignee_id, u.name as assignee_name, t.position, t.due_date, t.created_at, t.updated_at 
 		FROM tasks t
@@ -51,6 +51,17 @@ func (r *TaskRepository) ListByProject(ctx context.Context, projectID uuid.UUID,
 	}
 
 	query += " ORDER BY t.position ASC, t.created_at DESC"
+	
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", argCount)
+		args = append(args, limit)
+		argCount++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", argCount)
+		args = append(args, offset)
+		argCount++
+	}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -67,6 +78,20 @@ func (r *TaskRepository) ListByProject(ctx context.Context, projectID uuid.UUID,
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+func (r *TaskRepository) CountByProject(ctx context.Context, projectID uuid.UUID, status string) (int, error) {
+	query := `SELECT count(*) FROM tasks WHERE project_id = $1`
+	args := []interface{}{projectID}
+	
+	if status != "" {
+		query += " AND status = $2"
+		args = append(args, status)
+	}
+
+	var count int
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
 }
 
 func (r *TaskRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Task, error) {

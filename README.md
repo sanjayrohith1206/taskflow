@@ -4,10 +4,19 @@ TaskFlow is a minimal but powerful project and task management system designed w
 
 ## Tech Stack
 
-- **Backend**: Go (Chi context-aware router, SQL connectivity, JWT Auth)
+- **Backend**: Go (Fiber framework, SQL connectivity, JWT Auth)
 - **Frontend**: React 19 + TypeScript (Vite, Custom CSS with Glassmorphism)
 - **Database**: PostgreSQL 15
 - **Infrastructure**: Docker & Docker Compose
+- **Real-time**: WebSockets for live task synchronization
+
+## Key Features
+
+1. **Dual View Mode**: Switch between a premium **Kanban Board** and a high-density **List Table** dynamically.
+2. **Monochromatic Design System**: A sophisticated, minimalist interface built with custom CSS tokens, focusing on brand-aligned indigo and slate tones for a professional look.
+3. **Smart Sorting & Filtering**: Real-time task filtering and header-based sorting in List View for efficient workflow management.
+4. **Drag & Drop Interaction**: Seamless board reordering with native-feeling interaction using `hello-pangea/dnd`.
+5. **Real-time Updates**: Instant synchronization across clients using WebSockets.
 
 ## Architecture Decisions
 
@@ -15,7 +24,7 @@ TaskFlow is a minimal but powerful project and task management system designed w
 2. **Custom Design System**: Instead of using a heavy component library, I built a custom design system using Vanilla CSS tokens. This allowed for a highly polished "Glassmorphism" look that feels premium and unique.
 3. **Stateless Auth**: JWT is used for authentication, allowing the backend to remain stateless. A 24-hour expiry is enforced for security.
 4. **Optimistic UI**: For task status changes, the frontend updates the status immediately and reverts if the API call fails, providing a snappy user experience.
-5. **Multi-stage Docker Builds**: Used to minimize the production image size of the Go backend and serve the React app via a lightweight Nginx container.
+5. **Worker Integration**: Multi-stage Docker builds to minimize production image size.
 
 ## Running Locally
 
@@ -73,10 +82,8 @@ A seed user is created automatically during the initial migration:
 | PATCH | `/tasks/:id` | Update task status/priority |
 | DELETE | `/tasks/:id` | Delete specific task |
 
-## What I'd Do With More Time
+## Future roadmap
 
-1. **Integration Testing**: Add a robust suite of Go integration tests using `testcontainers-go` to ensure DB interactions are verified in isolation.
-2. **Real-time Notifications**: Implement WebSockets or Server-Sent Events (SSE) to notify users when a task is updated by someone else.
-3. **Drag and Drop**: Implement a Kanban-style board using `dnd-kit` or `react-beautiful-dnd` for better task visualization.
-4. **Enhanced Search**: Replace basic client-side filtering with a full-text search backend implementation using Postgres `tsvector`.
-5. **Deployment Optimization**: Setup a CI/CD pipeline (GitHub Actions) for automatic linting, testing, and Docker image publishing.
+1. **Integration Testing**: Add a robust suite of Go integration tests using `testcontainers-go`.
+2. **Enhanced Search**: Replace basic client-side filtering with full-text search backend implementation using Postgres `tsvector`.
+3. **Deployment Optimization**: Setup a CI/CD pipeline for automatic linting, testing, and Docker image publishing.

@@ -46,14 +46,14 @@ const Login: React.FC = () => {
 
         {error && (
           <div style={{ 
-            padding: '0.75rem', 
-            background: 'var(--danger)', 
-            opacity: 0.1,
+            padding: '0.75rem 1rem', 
+            background: 'rgba(239, 68, 68, 0.1)', 
             border: '1px solid var(--danger)',
             borderRadius: 'var(--radius-md)',
             color: 'var(--danger)',
-            fontSize: '0.9rem',
-            marginBottom: '1.5rem'
+            fontSize: '0.875rem',
+            marginBottom: '1.5rem',
+            lineHeight: '1.4'
           }}>
             {error}
           </div>

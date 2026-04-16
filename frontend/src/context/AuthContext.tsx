@@ -21,13 +21,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const token = api.getToken();
-    
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    const initAuth = () => {
+      try {
+        const savedUser = localStorage.getItem('user');
+        const token = api.getToken();
+        
+        if (savedUser && token) {
+          setUser(JSON.parse(savedUser));
+        }
+      } catch (err) {
+        console.error('Failed to initialize auth from storage', err);
+        // Clean up potentially corrupted data
+        localStorage.removeItem('user');
+        api.setToken(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
   }, []);
 
   const login = (token: string, loginUser: User) => {

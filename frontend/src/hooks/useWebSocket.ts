@@ -18,8 +18,6 @@ export const useWebSocket = (projectId: string | undefined, onEvent: (event: WSE
     const host = apiUrl.replace(/^https?:\/\//, '');
     const url = `${protocol}//${host}/ws/${projectId}`;
 
-    console.log('Attempting websocket connection to:', url);
-
     const connect = () => {
       ws.current = new WebSocket(url);
 
