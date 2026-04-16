@@ -29,15 +29,32 @@ func (h *TaskHandler) List(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid project id"})
 	}
 
+	// Pagination
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 10)
+	if page < 1 { page = 1 }
+	if limit < 1 { limit = 10 }
+	offset := (page - 1) * limit
+
 	status := c.Query("status")
 	assigneeID := c.Query("assignee")
 
-	tasks, err := h.taskRepo.ListByProject(c.UserContext(), projectID, status, assigneeID)
+	tasks, err := h.taskRepo.ListByProject(c.UserContext(), projectID, status, assigneeID, limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
 	}
 
-	return c.JSON(fiber.Map{"tasks": tasks})
+	total, err := h.taskRepo.CountByProject(c.UserContext(), projectID, status)
+	if err != nil {
+		total = len(tasks)
+	}
+
+	return c.JSON(fiber.Map{
+		"tasks":        tasks,
+		"total_tasks":  total,
+		"current_page": page,
+		"page_size":    limit,
+	})
 }
 
 func (h *TaskHandler) Create(c *fiber.Ctx) error {
